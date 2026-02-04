@@ -1,17 +1,16 @@
 import os
-try:
-    from dotenv import load_dotenv
-    load_dotenv()
-except Exception:
-    # dotenv is optional; environment variables can be used instead
-    pass
-
 import pandas as pd
 import json
 import time
 import re
 from tqdm import tqdm
 from groq import Groq
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except Exception:
+    pass
 
 
 API_KEY = os.getenv("API_KEY")
