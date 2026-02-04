@@ -21,7 +21,7 @@ INPUT_FILE = "PH_VoidBillListing.xlsx"
 OUTPUT_FILE = "categorized_orders_clean.xlsx"
 BATCH_SIZE = 20
 MODEL_NAME = "openai/gpt-oss-120b"
-AI_VERIFY_RULES = False
+AI_VERIFY_RULES = True
 
 client = Groq(api_key=API_KEY)
 
@@ -39,7 +39,6 @@ CATEGORIES = [
     "order cancelled by aggregator",
     "Order delay",
     "order type change",
-    "order without reason/ remark",
     "other",
     "out of stock",
     "payment issue",
@@ -48,7 +47,8 @@ CATEGORIES = [
     "promotion",
     "rider issue",
     "system issue",
-    "testing"
+    "testing",
+    "voids without clear reason/ remark"
 ]
 
 # ============= RULE-BASED PRE-CLASSIFICATION =============
@@ -58,7 +58,8 @@ KEYWORD_RULES = {
     # TESTING - highest priority
     "testing": [
         r"\btest\s*(order|odar|oder)?\b", r"\btesting\b", r"\btes\s*oder\b",
-        r"\bproduct\s*testing\b", r"\bfrom\s*(it|preshan)\b"
+        r"\bproduct\s*testing\b", r"\bfrom\s*(it|preshan)\b",
+        r"\bit\s*team\s*check\b"
     ],
     
     # PROMOTION - LSM, offers, discounts
@@ -66,7 +67,8 @@ KEYWORD_RULES = {
         r"\blsm\b", r"\bpromo(tion)?\b", r"\boffer\b", r"\b50\s*%\s*(off|flash|discount)?\b",
         r"\bdiscount\b", r"\bcyber\s*saving\b", r"\bmeal\s*deal\b", r"\bflash\s*offer\b",
         r"\bdon'?t\s*cook\b", r"\bhsbc\b", r"\bges\s*\d+%\b", r"\b\d+%\s*off\b",
-        r"\b15\s*%\b", r"\b20\s*%\b", r"\b30\s*%\b", r"\b1000\s*off\b"
+        r"\b15\s*%\b", r"\b20\s*%\b", r"\b30\s*%\b", r"\b1000\s*off\b",
+        r"\bhave\s*a?\s*\d+%\s*discount\b"
     ],
     
     # PAYMENT ISSUE - card, cash, machine problems
@@ -79,26 +81,32 @@ KEYWORD_RULES = {
     
     # CASHIER MISTAKE - wrongly punch, mistakenly
     "Cashier mistake": [
-        r"\bcashier\s*(mistake|mistakenly|mistakly|wrong)\b", r"\bwrongly\s*punch\b",
-        r"\bmistakenly\s*(punch|close|add|collect|mark)\b", r"\bmistakly\b",
+        r"\bcashier\s*(mistake|mistakenly|mistakly|wrong)\b", r"\bwrongly\s*punch(ed)?\b",
+        r"\bmistakenly\s*(punch|close|add|collect|mark|order|dispatch)\b", r"\bmistakly\b",
         r"\bcashier\s*error\b", r"\bwrong\s*(punch|order|bill|close)\b",
         r"\bcashiar\b", r"\bcashiyar\b", r"\bwrong\s*by\s*cashier\b",
-        r"\bwrong\s*order[sw]?\b", r"\bwrong\s*ordewr\b", r"\bmiss\s*communication\b"
+        r"\bwrong\s*order[sw]?\b", r"\bwrong\s*ordewr\b", r"\bmiss\s*communication\b",
+        r"\bdispatcher\s*mistakenly\b", r"\bdispatcher\s*collected\b",
+        r"\bmistakenly\s*orders?\s*split\b", r"\bdidn'?t\s*close\b", r"\bdidnt\s*close\b",
+        r"\bdispac?ter\s*mistakenly\b"
     ],
     
     # CALL CENTER MISTAKE - CSR, sale center errors
     "Call Center mistake": [
-        r"\bcsr\s*(error|mistake)?\b", r"\bsale\s*cent(er|re)\s*(error|mistake|issue|request)\b",
-        r"\bcall\s*cent(er|re)\s*(error|mistake|asked)\b", r"\bsales\s*cent(er|re)\b",
+        r"\bcsr\s*(error|mistake)?\b", r"\bsale\s*cent(er|re)\s*(error|mistake|issue|request)?\b",
+        r"\bcall\s*cent(er|re)\s*(error|mistake|asked|have\s*wrongly)?\b", r"\bsales\s*cent(er|re)\b",
         r"\baccording\s*to\s*call\s*cent\b", r"\bacording\s*to\s*call\s*senter\b",
-        r"\binformed\s*by\s*outlet\b", r"\binfomed\s*by\s*outlet\b"
+        r"\binformed\s*by\s*outlet\b", r"\binfomed\s*by\s*outlet\b",
+        r"\bsale\s*center\s*mistac?ly\b", r"\bcall\s*center\s*have\s*wrongly\b"
     ],
     
     # CUSTOMER DENIED - refused, rejected order
     "Customer denied the order": [
         r"\bcustomer\s*denied\b", r"\bcux\s*denied\b", r"\bdenied\s*(the\s*)?order\b",
         r"\bcustermar\s*denied\b", r"\brefuse[d]?\s*(the\s*)?order\b",
-        r"\breject(ed)?\s*(the\s*)?order\b", r"\bdeniend\b", r"\bdenaid\b"
+        r"\breject(ed)?\s*(the\s*)?order\b", r"\bdeniend\b", r"\bdenaid\b",
+        r"\bdidn'?t\s*place\s*(any\s*)?order\b", r"\bdidnt\s*place\s*(any\s*)?order\b",
+        r"\bhe\s*didnt\s*place\b"
     ],
     
     # CUSTOMER CANCEL - explicit cancellation
@@ -112,7 +120,7 @@ KEYWORD_RULES = {
     # DOUBLE PUNCH - ordered twice
     "double punch": [
         r"\bordered\s*twice\b", r"\bsame\s*order\s*\d+\b", r"\b2\s*times?\s*(same\s*)?order\b",
-        r"\btwo\s*orders?\s*(were\s*)?(placed|same)\b", r"\bdouble\b",
+        r"\btwo\s*orders?\s*(were\s*)?(placed|same)\b", r"\bdouble\b", r"\bdubble\b",
         r"\btwise\s*the\s*order\b", r"\bpast\s*same\s*order\b"
     ],
     
@@ -123,23 +131,30 @@ KEYWORD_RULES = {
     
     # LOCATION - wrong address, different outlet, transfer to other outlet
     "location": [
-        r"\bwrong\s*address\b", r"\bwrong\s*location\b", r"\bdifferent\s*(location|outlet)\b",
+        r"\bwrong\s*address\b", r"\bwrong\s*location\b", r"\bdifferent\s*(location|outlet|city)\b",
         r"\bwant\s*to\s*deliver\s*\w+\s*outlet\b", r"\bgo(ing)?\s*(to|from)\s*\w+\b",
         r"\btransfer(red)?\s*to\b", r"\bdeliver\s*from\b",
         r"\bslave\s*island\b", r"\bnearest\s*location\b", r"\bsent\s*\d+\b",
         r"\bfrom\s+\w+\s*outlet\b", r"\bto\s+\w+\s*outlet\b", r"\boutlet\s*order\b",
         r"\bdelivery\s+from\s+\w+\b", r"\bwennappuwa\b", r"\bkoswattha\b",
         r"\bnew\s*dkt\s*\w*\s*\d+\b", r"\bneew\s*order\b", r"\bkochchikade\b",
-        r"\bpanadura\b", r"\bpandura\b", r"\bhavelock\b", r"\b\d{2,3}\s*-\s*\w+\b"
+        r"\bpanadura\b", r"\bpandura\b", r"\bhavelock\b", r"\b\d{2,3}\s*-\s*\w+\b",
+        r"\bdifferent\s*city\s*with\s*different\s*out\s*let\b", r"\bsimilar\s*address\b"
     ],
     
     # PHONE - not answering, wrong number
     "phone": [
         r"\bphone\s*(number\s*)?(not\s*)?(work|answer|respond)\b",
-        r"\bnot\s*(answer|respond)(ing)?\s*(the\s*)?(call|phone|mobile)?\b",
+        r"\bnot\s*(answer|respond)(ing|ed)?\s*(the\s*)?(call|phone|mobile)?\b",
         r"\bwrong\s*(phone\s*)?(number|no|mobile)\b", r"\bincorrect\s*number\b",
-        r"\bcan'?t\s*contact\b", r"\bmobile\s*not\s*work\b", r"\bno\s*answer\b",
-        r"\bnumber\s*wrong\b", r"\bnumber\s*not\s*work\b"
+        r"\bcan'?t\s*contact\b", r"\bmobile\s*not\s*work\b", r"\bno\s*answer(ing)?\b",
+        r"\bnumber\s*wrong\b", r"\bnumber\s*not\s*work\b",
+        r"\bnot\s*respons\b", r"\bphone\s*call\s*(is\s*)?not\s*reac\b",
+        r"\bcx\s*no\s*answering\b", r"\bnumber\s*is\s*not\s*working\b",
+        r"\bdid\s*not\s*answer\s*(the\s*)?phone\b", r"\bdidn'?t\s*answer\b",
+        r"\bnot\s*in\s*responded?\s*call\b", r"\bphone\s*not\s*responded\b",
+        r"\bvoice\s*mail\b", r"\bgiven\s*number\s*(is\s*)?not\s*working\b",
+        r"\bcalled\s*(the\s*)?customer\s*\d+\s*times\b"
     ],
     
     # ORDER DELAY
@@ -166,26 +181,33 @@ KEYWORD_RULES = {
         r"\bcux\s*want(s|ed)?\s*(large|medium|small|personal)\b",
         r"\bcustomer\s*want(s|ed)?\s*(large|medium|small|personal)\b",
         r"\border\s*replaced\b", r"\breplace\s*to\b", r"\breplaced\s*delivery\b",
-        r"\bthis\s*order\s*was\s*placed\s*yesterday\b"
+        r"\bthis\s*order\s*was\s*placed\s*yesterday\b",
+        r"\bcustomer\s*mistakenly\s*placed\b", r"\bchanged\s*to\s*no\.?\b"
     ],
     
-    # OUT OF STOCK
+    # OUT OF STOCK - only match product/item not available, not customer
     "out of stock": [
-        r"\bout\s*of\s*stock\b", r"\bnot\s*(available|have)\b"
+        r"\bout\s*of\s*stock\b", r"\boos\b", r"\bstock\s*out\b",
+        r"\b(item|product|pizza|coke|coca|pepsi|drink|topping|ingredient)s?\s*(is\s*)?(not\s*)?(available|have)\b",
+        r"\bnot\s*available\s*(at\s*)?\s*(main\s*)?supplier\b",
+        r"\bsome\s*items\s*are\s*not\s*available\b"
     ],
     
-    # RIDER ISSUE
+    # RIDER ISSUE - only when issue is WITH the rider, not just mentioning rider
     "rider issue": [
-        r"\brider\s*(mistake|mistakenly|issue)?\b", r"\brider'?s?\s*issue\b",
-        r"\briderr?s?issue\b", r"\bdelivery\s*(boy|guy)\b",
-        r"\bat\s*door\b", r"\bnot\s*at\s*home\b",
+        r"\brider\s*(mistake|mistakenly|issue)\b", r"\brider'?s?\s*issue\b",
+        r"\briderr?s?issue\b",
         r"\briders?\s*(not\s*)?(assigned|assinged|assined)\b",
-        r"\brider\s*arrived\b", r"\briderarrived\b"
+        r"\bno\s*rider\s*(arrived|assigned|assinged)\b",
+        r"\bnorider\s*arrived\b", r"\brider\s*not\s*(assigned|assinged|arrived)\b",
+        r"\brider\s*arrived\s*yet\b", r"\briderarrived\s*yet\b"
     ],
     
     # SYSTEM ISSUE
     "system issue": [
-        r"\bsystem\s*(error|issue)\b", r"\bsystem\s*show\b"
+        r"\bsystem\s*(error|issue)\b", r"\bsystem\s*show\b",
+        r"\brider\s*app\b", r"\bcan\s*not\s*delivered?\s*in\s*rider\s*app\b",
+        r"\bit\s*team\s*(is\s*)?busy\b"
     ],
     
     # ORDER CANCELLED BY AGGREGATOR - Uber, PickMe, etc.
@@ -204,8 +226,15 @@ KEYWORD_RULES = {
         r"\bcustomer\s*(is\s*)?(not\s*)?(available|availble)\b", 
         r"\bcustomer\s*did(n'?t)?\s*come\b",
         r"\bcustomer\s*left\b", r"\bcustomer\s*visit\b",
-        r"\bday\s*end\b", r"\boutlet\s*closed\b", r"\bpower\s*cut\b",
-        r"\boven\s*breakdown\b", r"\bsecurity\s*department\b"
+        r"\boutlet\s*closed\b", r"\bpower\s*cut\b",
+        r"\boven\s*breakdown\b", r"\bsecurity\s*department\b",
+        r"\bcux?\s*(is\s*)?(not\s*)?(available|availble)\b",
+        r"\bcustomer\s*not\s*available\b", r"\bcx\s*not\s*available\b",
+        r"\bcalled\s*(the\s*)?customer\s*several\s*times\b",
+        r"\bcustomer\s*(is\s*)?not\s*showed?\s*up\b",
+        r"\bcustomer\s*(was\s*)?(not\s*)?(at\s*)?(the\s*)?location\b",
+        r"\bcustomer\s*wasn'?t\s*available\s*at\s*(the\s*)?location\b",
+        r"\bnot\s*at\s*home\b"
     ]
 }
 
@@ -230,17 +259,17 @@ def apply_keyword_rules(text):
         "payment issue",
         "promotion",
         "grid issue",
+        "rider issue",
+        "phone",
+        "cus.related issue",
         "out of stock",
         "Order delay",
-        "phone",
         "system issue",
-        "rider issue",
         "order type change",
         "location",
         "Customer Cancel order",
         "cus. Change the order",
-        "product issue or complain",
-        "cus.related issue"
+        "product issue or complain"
     ]
     
     for category in priority_order:
@@ -325,7 +354,7 @@ CLASSIFICATION RULES (apply in order):
 
 21. "other" - ONLY if nothing else fits
 
-22. "order without reason/ remark" - No meaningful reason given
+22. "voids without clear reason/ remark" - Use this when text exists but does NOT explain WHY the order was voided. Examples: "new order no 116", "customer place takeaway order", "veg melt", random order descriptions that don't give a void reason
 
 INPUT DATA TO CLASSIFY:
 {json.dumps(text_list, indent=2)}
@@ -512,7 +541,7 @@ def main():
     
     # Handle empty orders
     for order_id in orders_empty:
-        category_map[order_id] = "order without reason/ remark"
+        category_map[order_id] = "no reason/remark"
 
     # ============= APPLY RESULTS =============
     df['Predicted_Category'] = df['Temp_Order_ID'].map(category_map)
@@ -539,9 +568,12 @@ def main():
         
         cat_val = row['Predicted_Category']
         
-        if cat_val == "order without reason/ remark":
+        if cat_val == "no reason/remark":
             idx = row.index.get_loc('Predicted_Category')
             styles[idx] = 'background-color: #FFFF00'  # Yellow
+        elif cat_val == "voids without clear reason/ remark":
+            idx = row.index.get_loc('Predicted_Category')
+            styles[idx] = 'background-color: #FFD700'  # Gold
         elif cat_val == "ERROR":
             idx = row.index.get_loc('Predicted_Category')
             styles[idx] = 'background-color: #FF6B6B'  # Red for errors
