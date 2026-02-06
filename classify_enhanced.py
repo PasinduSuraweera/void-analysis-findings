@@ -22,7 +22,7 @@ API_KEY = os.getenv("API_KEY")
 if not API_KEY:
     raise SystemExit("API_KEY not set. Add API_KEY=your_key to a .env file or set the environment variable.")
 
-INPUT_FILE = "PH_VoidBillListing.xlsx"
+INPUT_FILE = "PH_VoidBillListing-dec.xlsx"
 OUTPUT_FILE = "categorized_orders_clean.xlsx"
 BATCH_SIZE = 10
 MODEL_NAME = "openai/gpt-oss-120b"
@@ -612,7 +612,8 @@ def main():
     
     print(f"\nReading {INPUT_FILE}...")
     try:
-        df = pd.read_excel(INPUT_FILE)
+        # Read with employee number columns as text to preserve leading zeros
+        df = pd.read_excel(INPUT_FILE, dtype={'Void By ': str, 'Placed By': str, 'Void By': str})
     except FileNotFoundError:
         print(f"File not found: {INPUT_FILE}")
         return
